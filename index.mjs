@@ -322,6 +322,9 @@ function status() {
   console.log(c.dim + '  Tip: --validate to check health · --simulate "cmd" to test · --shield for max safety' + c.reset);
   console.log();
 
+  console.log('  ' + c.yellow + '⚠ June 15:' + c.reset + c.dim + ' Anthropic splits programmatic billing in 23 days.' + c.reset);
+  console.log('  ' + c.dim + '  Diagnose any unexpected charge: https://htmlpreview.github.io/?https://gist.githubusercontent.com/yurukusa/d3a0e2403cc4078aa0183400c137d824/raw/wrong-charge-diagnostic.html' + c.reset);
+  console.log();
   // Exit code for CI: 0 = all installed, 1 = missing hooks
   if (missing > 0) process.exit(1);
 }
@@ -5997,6 +6000,13 @@ async function main() {
   console.log('  ' + c.dim + 'Diagnose:' + c.reset + ' https://yurukusa.github.io/cc-safe-setup/token-checkup.html');
   console.log('  ' + c.dim + 'Risk:' + c.reset + '     https://yurukusa.github.io/cc-safe-setup/risk-assessment.html');
   console.log('  ' + c.dim + 'Save $:' + c.reset + '   https://yurukusa.github.io/cc-safe-setup/token-book-chapter1.html (free)');
+  console.log();
+  console.log('  ' + c.yellow + '⚠ June 15:' + c.reset + ' Anthropic splits programmatic billing in 23 days. claude -p invocations route to a separate credit bucket.');
+  console.log('  ' + c.dim + '  Free 90-sec diagnostic (refund template if needed):' + c.reset);
+  console.log('  ' + c.dim + '    https://htmlpreview.github.io/?https://gist.githubusercontent.com/yurukusa/d3a0e2403cc4078aa0183400c137d824/raw/wrong-charge-diagnostic.html' + c.reset);
+  console.log('  ' + c.dim + '  Decision framework (stay / switch / hybridize):' + c.reset);
+  console.log('  ' + c.dim + '    https://yurukusa.gumroad.com/l/claude-code-migration-playbook?utm_source=cc-safe-setup-cli&utm_medium=post-install&utm_campaign=june15-cliff' + c.reset);
+  console.log();
   console.log('  ' + c.dim + 'Feedback:' + c.reset + ' https://github.com/yurukusa/cc-safe-setup/discussions  (questions / patterns that worked)');
   console.log('  ' + c.dim + 'Bug:' + c.reset + '      https://github.com/yurukusa/cc-safe-setup/issues/new/choose  (false positives / install issues)');
   console.log();
