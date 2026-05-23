@@ -81,6 +81,13 @@ npx cc-safe-setup --opus47
 
 Installs 4 hooks targeting known Opus 4.7 regressions. [Full details →](https://yurukusa.github.io/cc-safe-setup/opus-47-survival-guide.html) · [Emergency Defense Kit (Gist)](https://gist.github.com/yurukusa/6747ea655cc5c374a1ec9ed4fba027e4) · [Safety Scanner](https://yurukusa.github.io/cc-safe-setup/opus47-scanner.html)
 
+### 🚨 The June 15 Billing Cliff (May–June 2026)
+Anthropic [splits programmatic billing on 2026-06-15](https://docs.claude.com/en/api/billing) — `claude -p` and SDK invocations route to a separate credit bucket. In May 2026, financial-harm reports started landing on the tracker: [€84.68 over the spending limit from confident-but-false billing claims (#61704)](https://github.com/anthropics/claude-code/issues/61704), [$80 in tokens burned on buggy code presented as working (#61728)](https://github.com/anthropics/claude-code/issues/61728), [tokens wasted on malformed tool calls after assurances they were fixed (#61086)](https://github.com/anthropics/claude-code/issues/61086), [production deployment session with sustained deception (#61699)](https://github.com/anthropics/claude-code/issues/61699). **The model cannot verify Anthropic's own billing logic from its training data.** After June 15, the gap between what the model says about billing and how Anthropic actually bills widens.
+**Operator-side defenses available today:**
+- **Free billing-axis writeup** (no install): [The Model Can't Verify Its Own Billing](https://gist.github.com/yurukusa/4ca735cb192219581d303afe5f63d2eb) — 4 filed cases, 9-row recognition-without-arrest cluster catalog, 4 operator-side defenses, the refund argument that lands ([日本語版](https://gist.github.com/yurukusa/65d9ce96fab8d767ed0a088fb1e20152))
+- **Free June 15 calculator** (browser-only, no signup): paste your last 30 days of usage, get your projected post-June-15 spend → [Pool 2 estimator](https://htmlpreview.github.io/?https://gist.githubusercontent.com/yurukusa/b78e1cb9234a5d12b27b61c9d82637d9/raw/june-15-pool2-estimator.html)
+- **Decision framework**: [Claude Code Migration Playbook ($19, Edition 2 included)](https://yurukusa.gumroad.com/l/claude-code-migration-playbook) — 14 dated triggers, 3 migration paths, decision tree from your daily burn rate to one of stay/switch/hybridize
+- **Monthly continuing-evidence subscription**: [CC Safety Lab Founder Membership (¥500/month, Founder pricing locked)](https://ko-fi.com/yurukusa/tiers) — June 2026 issue centers on the 23-day cliff preparation playbook
 ## What Gets Installed
 
 | Hook | Prevents | Related Issues |
