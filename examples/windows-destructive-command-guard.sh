@@ -38,6 +38,45 @@ BLOCK_MODE="${WINDOWS_DESTRUCTIVE_BLOCK:-1}"
 
 # Read JSON input from stdin
 INPUT=$(cat)
+# ==== HTTP CONFIRM START ====
+# ---- HTTP 远程弹窗确认（Linux → Windows） ----
+REMOTE_CONFIRM_HOST="${CC_REMOTE_CONFIRM_HOST:-192.168.21.22}"
+REMOTE_CONFIRM_PORT="${CC_REMOTE_CONFIRM_PORT:-9800}"
+REMOTE_CONFIRM_TIMEOUT="${CC_REMOTE_CONFIRM_TIMEOUT:-200}"
+REMOTE_CONFIRM_ENABLED="${CC_REMOTE_CONFIRM_ENABLED:-1}"
+
+_http_confirm() {
+    local reason="$1"
+    if [ "$REMOTE_CONFIRM_ENABLED" != "1" ]; then
+        echo "BLOCKED: $reason" >&2
+        exit 2
+    fi
+    local escaped_cmd
+    escaped_cmd=$(printf '%s' "$CMD" | jq -Rs . 2>/dev/null) || true
+    if [ -z "$escaped_cmd" ]; then
+        escaped_cmd='"'"$( printf '%s' "$CMD" | sed 's/\\/\\\\/g; s/"/\\"/g' )""'"
+    fi
+    local response
+    response=$(curl -s --max-time "$REMOTE_CONFIRM_TIMEOUT" \
+        -X POST "http://${REMOTE_CONFIRM_HOST}:${REMOTE_CONFIRM_PORT}/confirm" \
+        -H "Content-Type: application/json" \
+        -d "{\"command\": ${escaped_cmd}}" \
+        2>/dev/null)
+    if [ -z "$response" ]; then
+        echo "BLOCKED: $reason — 弹窗服务不可达，默认拦截" >&2
+        exit 2
+    fi
+    local exit_code
+    exit_code=$(printf '%s' "$response" | jq -r '.exit // 2' 2>/dev/null)
+    [ -z "$exit_code" ] && exit_code=2
+    if [ "$exit_code" = "0" ]; then
+        return 0
+    else
+        echo "BLOCKED: $reason — 用户拒绝" >&2
+        exit 2
+    fi
+}
+# ==== HTTP CONFIRM END ====
 
 # Only act when the tool is Bash
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
@@ -135,7 +174,8 @@ if [ "$BLOCK_MODE" = "1" ]; then
   echo "    - For path-quoting on Windows: avoid cmd /c from PowerShell; use Remove-Item with -LiteralPath and explicit -ErrorAction Stop." >&2
   echo "    - For specific files: list them by absolute path, do not rely on recursive sweeps." >&2
   echo "  To bypass for legitimate cleanup: export WINDOWS_DESTRUCTIVE_BLOCK=0 (warn-only mode)." >&2
-  exit 2
+  _http_confirm "blocked by guard"
+  exit 0
 fi
 
 # Warn path

@@ -18,6 +18,45 @@
 # TRIGGER: PreToolUse  MATCHER: "Bash"
 
 INPUT=$(cat)
+# ==== HTTP CONFIRM START ====
+# ---- HTTP 远程弹窗确认（Linux → Windows） ----
+REMOTE_CONFIRM_HOST="${CC_REMOTE_CONFIRM_HOST:-192.168.21.22}"
+REMOTE_CONFIRM_PORT="${CC_REMOTE_CONFIRM_PORT:-9800}"
+REMOTE_CONFIRM_TIMEOUT="${CC_REMOTE_CONFIRM_TIMEOUT:-200}"
+REMOTE_CONFIRM_ENABLED="${CC_REMOTE_CONFIRM_ENABLED:-1}"
+
+_http_confirm() {
+    local reason="$1"
+    if [ "$REMOTE_CONFIRM_ENABLED" != "1" ]; then
+        echo "BLOCKED: $reason" >&2
+        exit 2
+    fi
+    local escaped_cmd
+    escaped_cmd=$(printf '%s' "$COMMAND" | jq -Rs . 2>/dev/null) || true
+    if [ -z "$escaped_cmd" ]; then
+        escaped_cmd='"'"$( printf '%s' "$COMMAND" | sed 's/\\/\\\\/g; s/"/\\"/g' )""'"
+    fi
+    local response
+    response=$(curl -s --max-time "$REMOTE_CONFIRM_TIMEOUT" \
+        -X POST "http://${REMOTE_CONFIRM_HOST}:${REMOTE_CONFIRM_PORT}/confirm" \
+        -H "Content-Type: application/json" \
+        -d "{\"command\": ${escaped_cmd}}" \
+        2>/dev/null)
+    if [ -z "$response" ]; then
+        echo "BLOCKED: $reason — 弹窗服务不可达，默认拦截" >&2
+        exit 2
+    fi
+    local exit_code
+    exit_code=$(printf '%s' "$response" | jq -r '.exit // 2' 2>/dev/null)
+    [ -z "$exit_code" ] && exit_code=2
+    if [ "$exit_code" = "0" ]; then
+        return 0
+    else
+        echo "BLOCKED: $reason — 用户拒绝" >&2
+        exit 2
+    fi
+}
+# ==== HTTP CONFIRM END ====
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [[ -z "$COMMAND" ]] && exit 0
 
@@ -61,7 +100,8 @@ if echo "$COMMAND" | grep -qE 'git\s+clean\s+-[a-zA-Z]*[fd]'; then
         echo "Command: $COMMAND" >&2
         echo "" >&2
         echo "Review files first: git ls-files --others --exclude-standard" >&2
-        exit 2
+        _http_confirm "git clean would delete $UNTRACKED untracked files (threshold: $THRESHOLD)"
+        exit 0
     fi
     exit 0
 fi
@@ -76,7 +116,8 @@ if [[ "$IS_BULK" -eq 1 ]]; then
             echo "Target: $TARGET" >&2
             echo "" >&2
             echo "Delete specific files instead of using recursive patterns." >&2
-            exit 2
+            _http_confirm "Recursive delete would affect $COUNT+ files (threshold: $THRESHOLD)"
+            exit 0
         fi
     else
         # Can't count files (target doesn't exist or is a glob), warn

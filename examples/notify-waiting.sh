@@ -8,6 +8,8 @@
 #
 # Usage: Add to settings.json as a Notification hook
 #
+# TRIGGER: Notification  MATCHER: ""
+#
 # {
 #   "hooks": {
 #     "Notification": [{
