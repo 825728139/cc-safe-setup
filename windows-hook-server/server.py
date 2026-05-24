@@ -25,11 +25,14 @@ popup_queue = queue.Queue()
 pending = {}
 pending_lock = threading.Lock()
 
-# --- 结果缓存：同一命令短时间内不重复弹窗 ---
+# --- 结果缓存：同一命令/通知短时间内不重复弹窗 ---
 # {command: {"exit": 0或2, "time": timestamp}}
 confirm_cache = {}
 cache_lock = threading.Lock()
 CACHE_TTL = 30  # 缓存 30 秒
+
+# --- 通知节流：30 秒内只弹一次 ---
+notify_last_time = 0.0
 
 app = Flask(__name__)
 
@@ -78,7 +81,16 @@ def confirm():
 
 @app.route("/notify", methods=["POST"])
 def notify():
-    """通知弹窗（单按钮）。返回 {"exit": 0}。"""
+    """通知弹窗（单按钮）。30 秒内只弹一次。返回 {"exit": 0}。"""
+    global notify_last_time
+    now = time.time()
+
+    # 30 秒内访问过就跳过，每次访问都更新时间
+    if (now - notify_last_time) < CACHE_TTL:
+        notify_last_time = now
+        return jsonify(exit=0)
+    notify_last_time = now
+
     data = request.get_json(silent=True) or {}
     message = data.get("message", "Claude waiting for input")
 
