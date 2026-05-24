@@ -162,3 +162,94 @@ echo '{"hook_event_name":"Notification"}' | ~/.claude/hooks/notify-waiting.sh
 - Windows 弹窗服务不可达 → 默认拦截
 - `CC_REMOTE_CONFIRM_ENABLED=0` 可禁用 HTTP 确认，恢复原生直接拦截行为
 - `auto-snapshot` 每次编辑复制被修改的单个文件，7 天自动清理，不会持续膨胀磁盘
+
+## 踩坑记录（重要）
+
+### 1. jq 是硬依赖，缺失时 hook 静默放行
+
+所有 hook 脚本用 `jq` 从 stdin JSON 中提取命令。**jq 没装时，脚本无法解析 JSON，`COMMAND` 为空，直接 `exit 0` 放行一切命令**——没有任何报错，弹窗也不会出现。
+
+```bash
+# Linux 安装
+sudo apt install jq
+
+# Windows / Git Bash — 下载二进制
+curl -L -o ~/bin/jq.exe https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe
+chmod +x ~/bin/jq.exe
+```
+
+**验证方法**：运行 `which jq`，必须有输出。如果 hook 没弹窗，第一个排查项就是 jq。
+
+### 2. Hook 系统拦截的是 Bash 命令本身，不是脚本参数
+
+Claude Code 的 hook 系统会把你执行的 Bash 命令转成 JSON 传给 hook 脚本。所以当你在终端手动测试时：
+
+```bash
+# ❌ 这样做会被 hook 系统拦截——它把整条管道命令当成要检查的内容
+echo '{"tool_input":{"command":"rm -rf /test"}}' | bash destructive-guard.sh
+
+# ✅ 正确测试方式：用 Python 子进程或写入临时文件
+python3 -c "
+import subprocess, json
+inp = json.dumps({'tool_name':'Bash','tool_input':{'command':'rm -rf /home/test'}})
+result = subprocess.run(['bash','destructive-guard.sh'], input=inp.encode(), capture_output=True)
+print('EXIT:', result.returncode)
+"
+```
+
+### 3. 全局 hook vs 项目 hook
+
+Claude Code 有两个 hook 安装位置：
+- **全局**：`~/.claude/hooks/` + `~/.claude/settings.json` — 所有项目生效
+- **项目**：`.claude/hooks/` + `.claude/settings.json` — 仅当前项目生效
+
+`npx cc-safe-setup` 默认安装到全局。用 `CLAUDE_PROJECT_DIR` 可指定项目目录：
+
+```bash
+CLAUDE_PROJECT_DIR=/path/to/project npx cc-safe-setup
+```
+
+**注意**：如果全局和项目都装了同名 hook，两边都会执行。改了其中一个的 IP 不影响另一个。
+
+### 4. 环境变量通过管道传递的问题
+
+在 Git Bash 中，管道命令里的内联环境变量可能不传递到子进程：
+
+```bash
+# ❌ IP 变量可能不生效
+echo '...' | CC_REMOTE_CONFIRM_HOST=127.0.0.1 bash hook.sh
+
+# ✅ 先 export 再执行
+export CC_REMOTE_CONFIRM_HOST=127.0.0.1
+echo '...' | bash hook.sh
+```
+
+### 5. Windows Git Bash 的 grep -P 警告
+
+`destructive-guard.sh` 用 `grep -oP` 提取目标路径，在 Git Bash 中会产生警告：
+
+```
+grep: -P supports only unibyte and UTF-8 locales
+```
+
+**不影响功能**——提取失败时 TARGET_PATH 为空，脚本仍会继续执行拦截逻辑。如需消除警告，可设置：
+
+```bash
+export LC_ALL=C.UTF-8
+```
+
+### 6. 切换网络环境时批量修改 IP
+
+脚本里的默认 IP 硬编码在每个 hook 文件中。切换网络（如家里 192.168.21.22 → 公司 192.168.100.x）时：
+
+```bash
+# 一键替换所有 hook 的默认 IP
+sed -i 's/192\.168\.21\.22/192.168.100.x/g' ~/.claude/hooks/*.sh
+```
+
+或者统一用环境变量管理（推荐），这样只需改 export 不用改文件：
+
+```bash
+export CC_REMOTE_CONFIRM_HOST="192.168.100.x"
+export CC_REMOTE_NOTIFY_HOST="192.168.100.x"
+```
