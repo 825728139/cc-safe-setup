@@ -40,7 +40,7 @@ Linux (Claude Code)                        Windows (弹窗服务)
 
 ### 走 HTTP 弹窗确认的（Windows 点"允许/拒绝"）
 
-- `destructive-guard` — rm -rf / git reset --hard / chmod 777 / sudo + 危险命令 等
+- `destructive-guard` — 所有 rm -rf / git reset --hard / chmod 777 / sudo + 危险命令 等
 - `bulk-file-delete-guard` — 批量删除文件
 - `scope-guard` — 操作项目目录外的文件
 - `block-database-wipe` — DROP DATABASE / migrate:fresh 等数据库摧毁命令
@@ -65,22 +65,23 @@ Linux (Claude Code)                        Windows (弹窗服务)
 
 ## 触发弹窗的完整命令清单
 
-### destructive-guard（12 个拦截点）
+### destructive-guard（13 个拦截点）
 
 | # | 命令示例 | 触发条件 | 放行例外 |
 |---|---------|---------|---------|
-| 1 | `rm -rf /` `rm -rf /home` `rm -rf ~` `rm -rf ..` | rm 目标为 `/` `/home` `/etc` `/usr` `/var` `/mnt` `~` `..` | 目标是 `node_modules` `dist` `build` `.cache` `__pycache__` `coverage` `.next` `.nuxt` `tmp` 时放行 |
+| 1 | `rm -rf anything` `rm -r dir/` `rm -Rf path/` | **所有递归删除**，无论目标路径 | —（无例外，均弹窗确认） |
 | 2 | `rm --no-preserve-root` | 带 `--no-preserve-root` 参数 | — |
-| 3 | `git reset --hard` | 管道开头或 `;` `&&` `\|\|` 后的 `git reset --hard` | — |
-| 4 | `git clean -fd` `git clean -fdx` | 管道开头或 `;` `&&` `\|\|` 后的 `git clean` | — |
-| 5 | `chmod -R 777 /` `chmod 777 ~` | chmod 777 作用于 `/` `~` `.` 等广域路径 | — |
-| 6 | `find / -delete` `find ~ -exec rm` | find 作用于 `/` `~` `..` 并带 `-delete` | — |
-| 7 | `sudo rm -rf` `sudo chmod 777` `sudo dd if=` `sudo mkfs` | sudo 搭配危险命令 | — |
-| 8 | `Remove-Item -Recurse -Force` `del /s /q` `rd /s /q` | PowerShell/Windows 递归强制删除 | — |
-| 9 | `git checkout --force` `git switch --discard-changes` | git 强制切换丢弃更改 | — |
-| 10 | `bash -c 'rm -rf /...'` | 危险命令包裹在 `sh -c` / `bash -c` / `zsh -c` 中 | — |
-| 11 | `echo 'rm -rf /' \| bash` | 危险命令通过管道传给 shell | — |
-| 12 | `rm -rf` 目标含 NFS/Docker/bind 挂载点 | 检测到目标路径下有子挂载（需 findmnt） | — |
+| 3 | `rm -rf /` `rm -rf /home` `rm -rf ~` `rm -rf ..` | rm 目标为 `/` `/home` `/etc` `/usr` `/var` `/mnt` `~` `..`（比 #1 更危险） | — |
+| 4 | `git reset --hard` | 管道开头或 `;` `&&` `\|\|` 后的 `git reset --hard` | — |
+| 5 | `git clean -fd` `git clean -fdx` | 管道开头或 `;` `&&` `\|\|` 后的 `git clean` | — |
+| 6 | `chmod -R 777 /` `chmod 777 ~` | chmod 777 作用于 `/` `~` `.` 等广域路径 | — |
+| 7 | `find / -delete` `find ~ -exec rm` | find 作用于 `/` `~` `..` 并带 `-delete` | — |
+| 8 | `sudo rm -rf` `sudo chmod 777` `sudo dd if=` `sudo mkfs` | sudo 搭配危险命令 | — |
+| 9 | `Remove-Item -Recurse -Force` `del /s /q` `rd /s /q` | PowerShell/Windows 递归强制删除 | — |
+| 10 | `git checkout --force` `git switch --discard-changes` | git 强制切换丢弃更改 | — |
+| 11 | `bash -c 'rm -rf /...'` | 危险命令包裹在 `sh -c` / `bash -c` / `zsh -c` 中 | — |
+| 12 | `echo 'rm -rf /' \| bash` | 危险命令通过管道传给 shell | — |
+| 13 | `rm -rf` 目标含 NFS/Docker/bind 挂载点 | 检测到目标路径下有子挂载（需 findmnt） | — |
 
 ### bulk-file-delete-guard（2 个拦截点）
 

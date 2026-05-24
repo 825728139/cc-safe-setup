@@ -14,6 +14,7 @@ Windows 弹窗服务 — 接收 Linux Claude Code hook 的 HTTP 请求，弹窗�
 
 import queue
 import threading
+import time
 import uuid
 from flask import Flask, request, jsonify
 
@@ -24,6 +25,12 @@ popup_queue = queue.Queue()
 pending = {}
 pending_lock = threading.Lock()
 
+# --- 结果缓存：同一命令短时间内不重复弹窗 ---
+# {command: {"exit": 0或2, "time": timestamp}}
+confirm_cache = {}
+cache_lock = threading.Lock()
+CACHE_TTL = 30  # 缓存 30 秒
+
 app = Flask(__name__)
 
 
@@ -32,6 +39,13 @@ def confirm():
     """删除确认弹窗。返回 {"exit": 0} 放行, {"exit": 2} 拦截。"""
     data = request.get_json(silent=True) or {}
     command = data.get("command", "(unknown)")
+    now = time.time()
+
+    # 查缓存：相同命令 30 秒内直接返回上次结果
+    with cache_lock:
+        cached = confirm_cache.get(command)
+        if cached and (now - cached["time"]) < CACHE_TTL:
+            return jsonify(exit=cached["exit"])
 
     req_id = str(uuid.uuid4())
     done = threading.Event()
@@ -54,6 +68,11 @@ def confirm():
         entry = pending.pop(req_id, None)
 
     exit_code = entry["result"]["exit"] if entry else 2
+
+    # 写入缓存
+    with cache_lock:
+        confirm_cache[command] = {"exit": exit_code, "time": time.time()}
+
     return jsonify(exit=exit_code)
 
 
@@ -129,23 +148,33 @@ def _show_confirm(root, req_id, command):
     win = tk.Toplevel(root)
     win.title("Claude Code - Confirm Operation")
     win.attributes("-topmost", True)
-    win.resizable(False, False)
 
-    # 居中
-    w, h = 520, 220
+    # 根据命令长度自适应窗口大小
+    w = 620
+    lines = max(1, len(command) // 70 + command.count("\n") + 1)
+    h = min(max(240, 120 + lines * 18), 500)
     sx = win.winfo_screenwidth()
     sy = win.winfo_screenheight()
     win.geometry(f"{w}x{h}+{(sx - w) // 2}+{(sy - h) // 2}")
+    win.minsize(w, 240)
+    win.resizable(True, True)
 
-    tk.Label(win, text="Claude wants to run:", font=("", 11)).pack(pady=(15, 5))
+    tk.Label(win, text="Claude wants to run:", font=("", 11)).pack(pady=(15, 5), padx=15, anchor="w")
 
-    # 命令文本，限制长度
-    display = command if len(command) <= 120 else command[:120] + "..."
-    cmd_var = tk.StringVar(value=display)
-    entry = tk.Entry(win, textvariable=cmd_var, state="readonly", width=65, font=("Consolas", 10))
-    entry.pack(pady=5, padx=15)
+    # 多行命令显示区
+    frame = tk.Frame(win)
+    frame.pack(pady=5, padx=15, fill="both", expand=True)
 
-    tk.Label(win, text="Allow? (200s timeout = block)", fg="gray").pack(pady=(10, 5))
+    text = tk.Text(frame, font=("Consolas", 10), wrap="char", height=max(2, min(lines, 12)),
+                   relief="solid", borderwidth=1, highlightthickness=0)
+    scrollbar = tk.Scrollbar(frame, command=text.yview)
+    text.configure(yscrollcommand=scrollbar.set)
+    text.insert("1.0", command)
+    text.configure(state="disabled")
+    scrollbar.pack(side="right", fill="y")
+    text.pack(side="left", fill="both", expand=True)
+
+    tk.Label(win, text="Allow? (200s timeout = block)", fg="gray").pack(pady=(8, 2))
 
     btn_frame = tk.Frame(win)
     btn_frame.pack(pady=10)
@@ -185,20 +214,24 @@ def _show_notify(root, req_id, message):
     win = tk.Toplevel(root)
     win.title("Claude Code - Notification")
     win.attributes("-topmost", True)
-    win.resizable(False, False)
+    win.resizable(True, True)
 
-    w, h = 420, 160
+    w = 460
+    lines = max(1, len(message) // 50 + message.count("\n") + 1)
+    h = min(max(160, 80 + lines * 22), 400)
     sx = win.winfo_screenwidth()
     sy = win.winfo_screenheight()
     win.geometry(f"{w}x{h}+{(sx - w) // 2}+{(sy - h) // 2}")
+    win.minsize(w, 160)
 
-    tk.Label(win, text=message, font=("", 12)).pack(pady=(25, 15))
+    lbl = tk.Label(win, text=message, font=("", 12), wraplength=w - 40, justify="left")
+    lbl.pack(pady=(25, 15), padx=20)
 
     def on_ok():
         win.destroy()
         _finish(req_id, 0)
 
-    tk.Button(win, text="OK", width=10, command=on_ok).pack()
+    tk.Button(win, text="OK", width=10, command=on_ok).pack(pady=(0, 10))
 
     # 超时 205s 自动关闭
     win.after(205_000, on_ok)
