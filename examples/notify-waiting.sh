@@ -1,5 +1,6 @@
 #!/bin/bash
 # notify-waiting.sh — Desktop notification when Claude needs input
+#                     (支持本地通知 + HTTP 远程 Windows 弹窗)
 #
 # Solves: Multiple sessions running, don't know which one is blocked
 #
@@ -15,10 +16,30 @@
 #     }]
 #   }
 # }
+#
+# CONFIG (环境变量):
+#   CC_REMOTE_NOTIFY_HOST     — Windows IP（默认 192.168.21.22）
+#   CC_REMOTE_NOTIFY_PORT     — 端口（默认 9800）
+#   CC_REMOTE_NOTIFY_TIMEOUT  — 超时秒数（默认 205）
+#   CC_REMOTE_NOTIFY_ENABLED  — 1 启用 / 0 禁用
+
+# ---- HTTP 远程通知（Windows 弹窗） ----
+REMOTE_NOTIFY_HOST="${CC_REMOTE_NOTIFY_HOST:-192.168.21.22}"
+REMOTE_NOTIFY_PORT="${CC_REMOTE_NOTIFY_PORT:-9800}"
+REMOTE_NOTIFY_TIMEOUT="${CC_REMOTE_NOTIFY_TIMEOUT:-205}"
+REMOTE_NOTIFY_ENABLED="${CC_REMOTE_NOTIFY_ENABLED:-1}"
+
+if [ "$REMOTE_NOTIFY_ENABLED" = "1" ]; then
+    curl -s --max-time "$REMOTE_NOTIFY_TIMEOUT" \
+        -X POST "http://${REMOTE_NOTIFY_HOST}:${REMOTE_NOTIFY_PORT}/notify" \
+        -H "Content-Type: application/json" \
+        -d '{"message": "Claude Code 等待你的输入"}' \
+        >/dev/null 2>&1
+fi
+
+# ---- 本地通知（兜底） ----
 
 # Linux (notify-send) — skip on WSL2 where D-Bus may not be running
-#
-# TRIGGER: PreToolUse  MATCHER: "Bash"
 if command -v notify-send &>/dev/null && [ -z "$WSL_DISTRO_NAME" ]; then
     notify-send "Claude Code" "Waiting for your input" --urgency=normal 2>/dev/null && exit 0
 fi
