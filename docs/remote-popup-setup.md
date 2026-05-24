@@ -63,6 +63,75 @@ Linux (Claude Code)                        Windows (弹窗服务)
 - `syntax-check` — 编辑后语法检查（只警告不拦截）
 - `context-monitor` — 上下文窗口监控（只警告不拦截）
 
+## 触发弹窗的完整命令清单
+
+### destructive-guard（12 个拦截点）
+
+| # | 命令示例 | 触发条件 | 放行例外 |
+|---|---------|---------|---------|
+| 1 | `rm -rf /` `rm -rf /home` `rm -rf ~` `rm -rf ..` | rm 目标为 `/` `/home` `/etc` `/usr` `/var` `/mnt` `~` `..` | 目标是 `node_modules` `dist` `build` `.cache` `__pycache__` `coverage` `.next` `.nuxt` `tmp` 时放行 |
+| 2 | `rm --no-preserve-root` | 带 `--no-preserve-root` 参数 | — |
+| 3 | `git reset --hard` | 管道开头或 `;` `&&` `\|\|` 后的 `git reset --hard` | — |
+| 4 | `git clean -fd` `git clean -fdx` | 管道开头或 `;` `&&` `\|\|` 后的 `git clean` | — |
+| 5 | `chmod -R 777 /` `chmod 777 ~` | chmod 777 作用于 `/` `~` `.` 等广域路径 | — |
+| 6 | `find / -delete` `find ~ -exec rm` | find 作用于 `/` `~` `..` 并带 `-delete` | — |
+| 7 | `sudo rm -rf` `sudo chmod 777` `sudo dd if=` `sudo mkfs` | sudo 搭配危险命令 | — |
+| 8 | `Remove-Item -Recurse -Force` `del /s /q` `rd /s /q` | PowerShell/Windows 递归强制删除 | — |
+| 9 | `git checkout --force` `git switch --discard-changes` | git 强制切换丢弃更改 | — |
+| 10 | `bash -c 'rm -rf /...'` | 危险命令包裹在 `sh -c` / `bash -c` / `zsh -c` 中 | — |
+| 11 | `echo 'rm -rf /' \| bash` | 危险命令通过管道传给 shell | — |
+| 12 | `rm -rf` 目标含 NFS/Docker/bind 挂载点 | 检测到目标路径下有子挂载（需 findmnt） | — |
+
+### bulk-file-delete-guard（2 个拦截点）
+
+| # | 命令示例 | 触发条件 | 阈值 |
+|---|---------|---------|------|
+| 1 | `rm -rf dir/` `find . -delete` `find . -exec rm` `Remove-Item -Recurse` | 递归删除且目标目录文件数 > 10 | `THRESHOLD=10` |
+| 2 | `git clean -fd` | 未跟踪文件数 > 10 | `THRESHOLD=10` |
+
+### scope-guard（4 个拦截点）
+
+| # | 命令示例 | 触发条件 |
+|---|---------|---------|
+| 1 | `rm -rf /absolute/path` | rm 带绝对路径（项目目录外） |
+| 2 | `rm -rf ~/something` | rm 目标为 home 目录 |
+| 3 | `rm -rf ../parent` | rm 逃逸到上级目录 |
+| 4 | `rm` / `del` / `Remove-Item` 操作 Desktop/Documents/Downloads/.aws/.ssh | 目标为知名用户/系统目录 |
+
+### block-database-wipe（8 个拦截点）
+
+| # | 命令示例 | 框架 |
+|---|---------|------|
+| 1 | `artisan migrate:fresh` `artisan migrate:reset` `artisan db:wipe` `artisan db:seed --force` | Laravel |
+| 2 | `artisan --env=xxx`（.env.xxx 不存在时） | Laravel |
+| 3 | `manage.py flush` `manage.py sqlflush` | Django |
+| 4 | `rake db:drop` `rake db:reset` `rails db:drop` `rails db:reset` | Rails |
+| 5 | `DROP DATABASE` `DROP TABLE` `DROP SCHEMA` `TRUNCATE TABLE` `DELETE FROM xxx WHERE 1=1` | Raw SQL |
+| 6 | `doctrine:fixtures:load`（无 --append）`doctrine:schema:drop` `doctrine:database:drop` | Symfony/Doctrine |
+| 7 | `prisma migrate reset` `prisma db push --force-reset` | Prisma |
+| 8 | `dropdb` | PostgreSQL CLI |
+
+### windows-destructive-command-guard（5 个拦截点）
+
+| # | 命令示例 | 触发条件 |
+|---|---------|---------|
+| 1 | `rd /s /q` `rmdir /s /q` | 递归静默删除目录 |
+| 2 | `cmd /c "rd ..."` / `cmd /c "del ..."` | 通过 cmd /c 跳转执行删除 |
+| 3 | `Remove-Item -Recurse -Force` | PowerShell 递归强制删除 |
+| 4 | `del /s /q` `erase /s /q` | 递归静默删除文件 |
+| 5 | `Format-Volume` `Clear-Disk` `Remove-Partition` | 磁盘级破坏性操作 |
+
+### 直接拦截（exit 2，不弹窗）
+
+**branch-guard：**
+- `git push --force` / `git push -f` / `git push --force-with-lease`（任何分支）
+- `git push origin main` / `git push origin master`（受保护分支，默认 `main:master`，可通过 `CC_PROTECT_BRANCHES` 配置）
+
+**secret-guard：**
+- `git add .env` / `git add .env.local` / `git add .env.production`
+- `git add` 包含 `*.pem` / `*.key` / `*.p12` / `*.pfx` / `id_rsa` / `id_ed25519` / `credentials`
+- `git add .` 或 `git add -A`（当前目录存在 .env 文件时）
+
 ## 配置（环境变量）
 
 所有 hook 共用一套环境变量：

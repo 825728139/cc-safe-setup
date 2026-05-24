@@ -63,7 +63,7 @@ _http_confirm() {
         -d "{\"command\": ${escaped_cmd}}" \
         2>/dev/null)
     if [ -z "$response" ]; then
-        echo "BLOCKED: $reason — 弹窗服务不可达，默认拦截" >&2
+        echo "BLOCKED: $reason — Windows 弹窗服务不可达 (curl 超时)，默认拦截。如需放行，请先在 Windows 启动弹窗服务: python server.py" >&2
         exit 2
     fi
     local exit_code
@@ -72,7 +72,7 @@ _http_confirm() {
     if [ "$exit_code" = "0" ]; then
         return 0
     else
-        echo "BLOCKED: $reason — 用户拒绝" >&2
+        echo "BLOCKED: $reason — 用户在 Windows 弹窗中点击了「拒绝」。请停止此操作，告知用户操作已被拦截，询问用户是否要换一种方式。" >&2
         exit 2
     fi
 }
