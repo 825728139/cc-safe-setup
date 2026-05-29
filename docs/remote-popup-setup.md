@@ -180,6 +180,7 @@ npx cc-safe-setup --install-example bulk-file-delete-guard
 npx cc-safe-setup --install-example scope-guard
 npx cc-safe-setup --install-example block-database-wipe
 npx cc-safe-setup --install-example windows-destructive-command-guard
+npx cc-safe-setup --install-example permission-confirm    # 权限请求走 Windows 弹窗
 ```
 
 ### 测试
@@ -190,6 +191,9 @@ echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | ~/.cla
 
 # 测试通知弹窗
 echo '{"hook_event_name":"Notification"}' | ~/.claude/hooks/notify-waiting.sh
+
+# 测试权限请求弹窗（Windows 应弹窗）
+echo '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | ~/.claude/hooks/permission-confirm.sh
 ```
 
 ## 8 个内置 hook 说明
@@ -209,6 +213,7 @@ echo '{"hook_event_name":"Notification"}' | ~/.claude/hooks/notify-waiting.sh
 
 | 类别 | Hook | 说明 |
 |------|------|------|
+| 跨机弹窗 | `permission-confirm` | **权限请求走 Windows 弹窗确认**（`npx cc-safe-setup --install-example permission-confirm`） |
 | 安全 | `env-var-check` | 阻止 export 里硬编码 API key |
 | 安全 | `bash-secret-output-detector` | 检测命令输出中是否包含密钥 |
 | 安全 | `symlink-guard` | 检测 rm 目标是否经过 symlink/junction |
@@ -225,6 +230,88 @@ echo '{"hook_event_name":"Notification"}' | ~/.claude/hooks/notify-waiting.sh
 | 会话 | `working-directory-fence` | 阻止操作 CWD 外的文件 |
 
 这些 hook 不需要走 HTTP 弹窗（要么直接拦截，要么自动放行，要么只警告）。
+
+## permission-confirm.sh 脚本内容
+
+```bash
+#!/bin/bash
+# permission-confirm.sh — Route permission requests to Windows popup
+#
+# TRIGGER: PermissionRequest
+# MATCHER: ""
+#
+# When Claude Code asks "Allow this action? (y/n)", this hook
+# intercepts and sends the request to Windows for confirmation.
+
+INPUT=$(cat)
+
+# ---- HTTP 远程弹窗确认 ----
+REMOTE_CONFIRM_HOST="${CC_REMOTE_CONFIRM_HOST:-192.168.21.22}"
+REMOTE_CONFIRM_PORT="${CC_REMOTE_CONFIRM_PORT:-9800}"
+REMOTE_CONFIRM_TIMEOUT="${CC_REMOTE_CONFIRM_TIMEOUT:-200}"
+REMOTE_CONFIRM_ENABLED="${CC_REMOTE_CONFIRM_ENABLED:-1}"
+
+if [ "$REMOTE_CONFIRM_ENABLED" != "1" ]; then
+    exit 0
+fi
+
+# Extract tool info
+TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_INPUT=$(printf '%s' "$INPUT" | jq -r '.tool_input // empty' 2>/dev/null)
+
+# Build description for popup
+DESCRIPTION="Tool: ${TOOL_NAME}"
+if [ -n "$TOOL_INPUT" ]; then
+    COMMAND=$(printf '%s' "$TOOL_INPUT" | jq -r '.command // .file_path // empty' 2>/dev/null)
+    if [ -n "$COMMAND" ]; then
+        if [ ${#COMMAND} -gt 200 ]; then
+            COMMAND="${COMMAND:0:200}..."
+        fi
+        DESCRIPTION="${DESCRIPTION}\nCommand: ${COMMAND}"
+    fi
+fi
+
+# Send to Windows popup
+escaped_desc=$(printf '%s' "$DESCRIPTION" | jq -Rs . 2>/dev/null)
+if [ -z "$escaped_desc" ]; then
+    escaped_desc="\"${DESCRIPTION}\""
+fi
+
+response=$(curl -s --max-time "$REMOTE_CONFIRM_TIMEOUT" \
+    -X POST "http://${REMOTE_CONFIRM_HOST}:${REMOTE_CONFIRM_PORT}/confirm" \
+    -H "Content-Type: application/json" \
+    -d "{\"command\": ${escaped_desc}, \"type\": \"permission\"}" \
+    2>/dev/null)
+
+if [ -z "$response" ]; then
+    exit 0
+fi
+
+exit_code=$(printf '%s' "$response" | jq -r '.exit // -1' 2>/dev/null)
+
+if [ "$exit_code" = "0" ]; then
+    jq -n '{
+        hookSpecificOutput: {
+            hookEventName: "PermissionRequest",
+            decision: {
+                behavior: "allow"
+            }
+        }
+    }'
+    exit 0
+else
+    echo "BLOCKED: 用户在 Windows 弹窗中拒绝了此操作。" >&2
+    jq -n '{
+        hookSpecificOutput: {
+            hookEventName: "PermissionRequest",
+            decision: {
+                behavior: "deny"
+            }
+        }
+    }'
+    exit 0
+fi
+```
 
 ## 注意事项
 
